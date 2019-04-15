@@ -10,15 +10,15 @@ public class ScriptAssistant {
 	static DefaultListModel<String> data;
 	static Clipboard clipboard;
 	static final Font font = new Font("Consolas", Font.PLAIN, 17);
-    static String UserDir = System.getProperty("user.home");
-    static String AppDir = "/AppData/Roaming/ScriptAssistant";
-    static String SettingsPath = "settings.dat";
-    static String ScriptPath = "script.dat";
-    static String RecordDelimiter = "\30"; // ascii record delimiter
-    static int left = 100;
-    static int top = 100;
-    static int width = 800;
-    static int height = 600;
+	static String UserDir = System.getProperty("user.home");
+	static String AppDir = "/AppData/Roaming/ScriptAssistant";
+	static String SettingsPath = "settings.dat";
+	static String ScriptPath = "script.dat";
+	static String RecordDelimiter = "\30"; // ascii record delimiter
+	static int left = 100;
+	static int top = 100;
+	static int width = 800;
+	static int height = 600;
 	static int usingIndex = -1;
 
     private static class NoSelectionModel extends DefaultListSelectionModel {
@@ -127,11 +127,11 @@ public class ScriptAssistant {
 		JList<String> datalist = new JList<String>(data);
 		datalist.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 		JScrollPane datascroll = new JScrollPane(datalist); 
-        frame.add(datascroll);
-        frame.setLocationRelativeTo(null);
-        frame.setBounds(left, top, width, height);
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        //datalist.setSelectionModel(new NoSelectionModel());
+		frame.add(datascroll);
+		frame.setLocationRelativeTo(null);
+		frame.setBounds(left, top, width, height);
+		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		//datalist.setSelectionModel(new NoSelectionModel());
 		datalist.setCellRenderer(getRenderer());
 		String[] scriptEntries = ReadFile(ScriptPath).split(RecordDelimiter);
 		for(int c = 0; c < scriptEntries.length; c++)
