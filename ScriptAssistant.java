@@ -4,239 +4,343 @@ import javax.swing.*;
 import java.awt.datatransfer.*;
 import java.io.*;
 import java.nio.file.*;
+import java.net.*;
 
-public class ScriptAssistant {
- static JFrame frame;
- static DefaultListModel < String > data;
- static Clipboard clipboard;
- static final Font font = new Font("Consolas", Font.PLAIN, 17);
- static String UserDir = System.getProperty("user.home");
- static String AppDir = "/AppData/Roaming/ScriptAssistant";
- static String SettingsPath = "settings.dat";
- static String ScriptPath = "script.dat";
- static String RecordDelimiter = "\30"; // ascii record delimiter
- static int left = 100;
- static int top = 100;
- static int width = 800;
- static int height = 600;
- static int usingIndex = -1;
+public class ScriptAssistant extends JFrame {
+	JFrame frame;
+	DefaultListModel<String> data;
+	JList<String> datalist;
+	Clipboard clipboard;
+	final String fontName = "Consolas";
+	final int fontSize = 12;
+	final Font font = new Font(fontName, Font.PLAIN, fontSize);
+	String UserDir = System.getProperty("user.home");
+	String AppDir = "/AppData/Roaming/ScriptAssistant";
+	String SettingsPath = "settings.dat";
+	String ScriptPath = "script.dat";
+	String userName = null;
+	String RecordDelimiter = "\30"; // ascii record delimiter
+	int left = 100;
+	int top = 100;
+	int width = 800;
+	int height = 600;
+	int usingIndex = -1;
+	boolean hasEditedSettings = false;
+	boolean hasEditedScript = false;
+	boolean handCursor = false;
 
- private static class NoSelectionModel extends DefaultListSelectionModel {
-  @Override
-  public void setAnchorSelectionIndex(final int anchorIndex) {}
+	private class ScriptAssistantMouseListener extends MouseAdapter {
+		@Override
+		public void mouseClicked(MouseEvent e) {
+			int i = datalist.locationToIndex(e.getPoint());
+			if (i < 0)
+				return;
+			switch (e.getButton()) {
+			case MouseEvent.BUTTON1:
+				String tmp = data.getElementAt(i).replace("%name%", userName).replace("%NAME%", userName.toUpperCase());
+				URI url;
+				if (tmp.length() > 0) {
+					if(tmp.charAt(0) == '@') {
+						try {
+							url = new URI(tmp.substring(1));
+							java.awt.Desktop.getDesktop().browse(url);
+						} catch (Exception err) {
+							// just ignore it, I guess
+						}
+					} else {
+						clipboard.setContents(new StringSelection(tmp), null);
+					}
+				}
+				break;
+			case MouseEvent.BUTTON3:
+				String ret = TextAreaDialog(data.getElementAt(i),
+						i < data.getSize() - 1 ? "Edit the message!" : "Insert a message!");
+				if (!ret.equals(data.getElementAt(i))) {
+					data.set(i, ret);
+					hasEditedScript = true;
+				}
+				FixBlanks();
+				break;
+			}
+		}
 
-  @Override
-  public void setLeadAnchorNotificationEnabled(final boolean flag) {}
+		@Override
+		public void mousePressed(MouseEvent e) {
+			if (e.getButton() != MouseEvent.BUTTON1)
+				return;
+			usingIndex = datalist.locationToIndex(e.getPoint());
+		}
 
-  @Override
-  public void setLeadSelectionIndex(final int leadIndex) {}
+		@Override
+		public void mouseReleased(MouseEvent e) {
+			if (e.getButton() != MouseEvent.BUTTON1)
+				return;
+			int endIndex = datalist.locationToIndex(e.getPoint());
+			if (usingIndex >= 0 && endIndex != usingIndex) {
+				MoveIndex(usingIndex, endIndex);
+				usingIndex = endIndex;
+			}
+			usingIndex = -1;
+		}
 
-  @Override
-  public void setSelectionInterval(final int index0, final int index1) {}
- }
+		public void updateCursor(int index) {
+			if(index < 0)
+				return;
+			String tmp = data.getElementAt(index);
+			if(tmp.length() > 0 && tmp.charAt(0) == '@') {
+				if(!handCursor) {
+					datalist.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+					handCursor = true;
+				}
+			} else if(handCursor) {
+				datalist.setCursor(Cursor.getDefaultCursor());
+				handCursor = false;
+			}
+		}
 
- private static ListCellRenderer < ? super String > getRenderer() {
-  return new DefaultListCellRenderer() {
-   @Override
-   public Component getListCellRendererComponent(JList < ? > list,
-    Object value, int index, boolean isSelected,
-    boolean cellHasFocus) {
-    if (value.equals(""))
-     value = "&nbsp;";
-    value = "<html><pre style='margin: 0px; padding: 0px 0px 2px 0px; font-family: Consolas;font-size: 17;font-weight: normal;'>" + value + "</pre></html>";
-    JLabel listCellRendererComponent = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-    listCellRendererComponent.setFont(font);
-    if (index < list.getModel().getSize() - 1)
-     listCellRendererComponent.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Color.LIGHT_GRAY));
-    return listCellRendererComponent;
-   }
-  };
- }
+		@Override
+		public void mouseMoved(MouseEvent e) {
+			updateCursor(datalist.locationToIndex(e.getPoint()));
+		}
 
- private static String ReadFile(String path) {
-  try {
-   return new String(Files.readAllBytes(Paths.get(UserDir, AppDir, path)));
-  } catch (Exception e) {
-   return "";
-  }
- }
+		@Override
+		public void mouseDragged(MouseEvent e) {
+			int endIndex = datalist.locationToIndex(e.getPoint());
+			if (usingIndex >= 0 && endIndex != usingIndex) {
+				MoveIndex(usingIndex, endIndex);
+				usingIndex = endIndex;
+			}
 
- private static boolean SaveFile(String path, String data) {
-  try {
-   Files.write(Paths.get(UserDir, AppDir, path), data.getBytes());
-   return true;
-  } catch (Exception e) {
-   return false;
-  }
- }
+			updateCursor(endIndex);
+		}
+	}
 
- private static String TextAreaDialog(String defaultStr, String title) {
-  JTextArea msg = new JTextArea(defaultStr);
-  msg.setLineWrap(false);
-  msg.setFont(font);
-  JScrollPane scrollPane = new JScrollPane(msg);
-  scrollPane.setPreferredSize(new Dimension(800, 600));
+	private class ScriptAssistantKeyListener extends KeyAdapter {
+		@Override
+		public void keyReleased(KeyEvent e) {
+			int i = datalist.getSelectedIndex();
+			String ret;
+			if (i < 0)
+				return;
+			switch (e.getKeyCode()) {
+			case 155:
+				ret = TextAreaDialog("", "Insert a message!");
+				if (!ret.equals("")) {
+					data.add(i, ret);
+					datalist.setSelectedIndex(i);
+					hasEditedScript = true;
+				}
+				break;
+			case 127:
+				clipboard.setContents(new StringSelection(data.getElementAt(i)), null);
+				data.remove(i);
+				FixBlanks();
+				hasEditedScript = true;
+				break;
+			}
+		}
+	}
 
-  if (JOptionPane.showConfirmDialog(frame, scrollPane, title, JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION) {
-   return msg.getText();
-  }
+	private class ScriptAssistantComponentListener extends ComponentAdapter {
+		@Override
+		public void componentResized(ComponentEvent e) {
+			if (width != frame.getWidth() || height != frame.getHeight()) {
+				width = frame.getWidth();
+				height = frame.getHeight();
+				hasEditedSettings = true;
+			}
+		}
 
-  return defaultStr;
- }
+		@Override
+		public void componentMoved(ComponentEvent e) {
+			if (left != frame.getX() || top != frame.getY()) {
+				left = frame.getX();
+				top = frame.getY();
+				hasEditedSettings = true;
+			}
+		}
+	}
 
- private static void FixBlanks() {
-  int c = data.getSize() - 1;
-  if (c < 0 || data.getElementAt(c).length() > 0) {
-   data.addElement("");
-  } else {
-   c--;
-   while (c >= 0 && data.getElementAt(c).length() < 1) {
-    data.removeElementAt(c);
-    c--;
-   }
-  }
- }
+	private class ScriptAssistantWindowListener extends WindowAdapter {
+		@Override
+		public void windowClosing(WindowEvent e) {
+			String savestr = "";
 
- private static void MoveIndex(int start, int end) {
-  String tmp = data.getElementAt(start);
-  data.removeElementAt(start);
-  data.add(end, tmp);
-  FixBlanks();
- }
+			if (hasEditedSettings) {
+				savestr = left + RecordDelimiter + top + RecordDelimiter + width + RecordDelimiter + height;
 
- public static void main(String[] args) {
-  File dir = new File(Paths.get(UserDir, AppDir).toString());
-  if (!dir.exists())
-   dir.mkdir();
+				if (userName != null) {
+					savestr = savestr + RecordDelimiter + userName;
+				}
 
-  String settingsstr = ReadFile(SettingsPath);
-  String[] settings = settingsstr.split(RecordDelimiter);
+				SaveFile(SettingsPath, savestr);
+			}
 
-  if (settings.length >= 4) {
-   left = Integer.parseInt(settings[0]);
-   top = Integer.parseInt(settings[1]);
-   width = Integer.parseInt(settings[2]);
-   height = Integer.parseInt(settings[3]);
-  }
+			if (hasEditedScript) {
+				for (int c = 0; c < data.getSize(); c++) {
+					if (c < 1) {
+						savestr = data.getElementAt(c);
+					} else {
+						savestr = savestr + RecordDelimiter + data.getElementAt(c);
+					}
+				}
+				SaveFile(ScriptPath, savestr);
+			}
+		}
+	}
 
-  clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-  frame = new JFrame("Script Assistant");
-  frame.setFont(font);
-  data = new DefaultListModel < String > ();
+	private class ScriptAssistantListCellRenderer extends DefaultListCellRenderer {
+		@Override
+		public Component getListCellRendererComponent(JList list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+			String tmp = value.toString();
+			if (tmp.equals(""))
+				tmp = "&nbsp;";
 
-  JList < String > datalist = new JList < String > (data);
-  datalist.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-  JScrollPane datascroll = new JScrollPane(datalist);
-  frame.add(datascroll);
-  frame.setLocationRelativeTo(null);
-  frame.setBounds(left, top, width, height);
-  frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-  //datalist.setSelectionModel(new NoSelectionModel());
-  datalist.setCellRenderer(getRenderer());
-  String[] scriptEntries = ReadFile(ScriptPath).split(RecordDelimiter);
-  for (int c = 0; c < scriptEntries.length; c++)
-   data.addElement(scriptEntries[c]);
-  FixBlanks();
+			if (tmp.charAt(0) == '@' && tmp.length() > 1) {
+				tmp = "<html><a href=" + tmp.substring(1) + " style='margin: 0px; padding: 0px 0px 2px 0px; font-family: " + fontName
+				+ ";font-size: " + fontSize + ";'>" + tmp.substring(1) + "</a></html>";
+			} else {
+				tmp = tmp.replace("<", "&lt;").replace(">", "&gt;")
+				.replace("[b]", "<span style='font-weight: bold;'>").replace("[/b]", "</span>")
+				.replace("[u]", "<span style='text-decoration: underline;'>").replace("[/u]", "</span>")
+				.replace("[i]", "<span style='font-style: italic;'>").replace("[/i]", "</span>")
+				.replace("[h]", "<span style='font-size: 1.2em;font-weight: bold;text-decoration: underline;'>").replace("[/h]", "</span>");
+				
+				if (!userName.equals("")) {
+					tmp = tmp.replace("%name%", userName).replace("%NAME%", userName.toUpperCase());
+				}
+		
+				tmp = "<html><pre style='margin: 0px; padding: 0px 0px 2px 0px; font-family: " + fontName
+						+ ";font-size: " + fontSize + ";font-weight: normal;'>" + tmp + "</pre></html>";
+			}
+			value = tmp;
+			JLabel listCellRendererComponent = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+			if (index < list.getModel().getSize() - 1)
+				listCellRendererComponent.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Color.LIGHT_GRAY));
+			return listCellRendererComponent;
+		}
+	}
 
-  datalist.addKeyListener(new KeyAdapter() {
-   public void keyReleased(KeyEvent e) {
-    int i = datalist.getSelectedIndex();
-    String ret;
-    if (i < 0)
-     return;
-    switch (e.getKeyCode()) {
-     case 155:
-      ret = TextAreaDialog("", "Insert a message!");
-      if (!ret.equals("")) {
-       data.add(i, ret);
-       datalist.setSelectedIndex(i);
-      }
-      break;
-     case 127:
-      clipboard.setContents(new StringSelection(data.getElementAt(i)), null);
-      data.remove(i);
-      FixBlanks();
-      break;
-    }
-   }
-  });
+	private String ReadFile(String path) {
+		try {
+			return new String(Files.readAllBytes(Paths.get(UserDir, AppDir, path)));
+		} catch (Exception e) {
+			// fail, let's try something else
+		}
+		try {
+			return new String(Files.readAllBytes(Paths.get(path)));
+		} catch (Exception e) {
+			return "";
+		}
+	}
 
-  datalist.addMouseListener(new MouseAdapter() {
-   public void mouseClicked(MouseEvent e) {
-    int i = datalist.locationToIndex(e.getPoint());
-    if (i < 0)
-     return;
-    switch (e.getButton()) {
-     case MouseEvent.BUTTON1:
-      String tmp = data.getElementAt(i);
-      if (tmp.length() > 0)
-       clipboard.setContents(new StringSelection(tmp), null);
-      break;
-     case MouseEvent.BUTTON3:
-      String ret = TextAreaDialog(data.getElementAt(i), i < data.getSize() - 1 ? "Edit the message!" : "Insert a message!");
-      if (!ret.equals(data.getElementAt(i))) {
-       data.set(i, ret);
-      }
-      FixBlanks();
-      break;
-    }
-   }
+	private boolean SaveFile(String path, String data) {
+		try {
+			Files.write(Paths.get(UserDir, AppDir, path), data.getBytes());
+			return true;
+		} catch (Exception e) {
+			return false;
+		}
+	}
 
-   public void mousePressed(MouseEvent e) {
-    if (e.getButton() != MouseEvent.BUTTON1)
-     return;
-    usingIndex = datalist.locationToIndex(e.getPoint());
-   }
+	private String TextAreaDialog(String defaultStr, String title) {
+		JTextArea msg = new JTextArea(userName.equals("") ? defaultStr : defaultStr.replace("%name%", userName).replace("%NAME%", userName.toUpperCase()));
+		msg.setLineWrap(false);
+		msg.setFont(font);
+		JScrollPane scrollPane = new JScrollPane(msg);
+		scrollPane.setPreferredSize(new Dimension(800, 600));
 
-   public void mouseReleased(MouseEvent e) {
-    if (e.getButton() != MouseEvent.BUTTON1)
-     return;
-    int endIndex = datalist.locationToIndex(e.getPoint());
-    if (usingIndex >= 0 && endIndex != usingIndex) {
-     MoveIndex(usingIndex, endIndex);
-     usingIndex = endIndex;
-    }
-    usingIndex = -1;
-   }
-  });
+		if (JOptionPane.showConfirmDialog(frame, scrollPane, title,
+				JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION) {
+			return userName.equals("") ? msg.getText() : msg.getText().replace(userName, "%name%").replace(userName.toUpperCase(), "%NAME%");
+		}
 
-  datalist.addMouseMotionListener(new MouseAdapter() {
-   public void mouseDragged(MouseEvent e) {
-    int endIndex = datalist.locationToIndex(e.getPoint());
-    if (usingIndex >= 0 && endIndex != usingIndex) {
-     MoveIndex(usingIndex, endIndex);
-     usingIndex = endIndex;
-    }
-   }
-  });
+		return defaultStr;
+	}
 
-  frame.addWindowListener(new WindowAdapter() {
-   public void windowClosing(WindowEvent e) {
-    String savestr = left + RecordDelimiter + top + RecordDelimiter + width + RecordDelimiter + height;
-    SaveFile(SettingsPath, savestr);
-    for (int c = 0; c < data.getSize(); c++) {
-     if (c < 1) {
-      savestr = data.getElementAt(c);
-     } else {
-      savestr = savestr + RecordDelimiter + data.getElementAt(c);
-     }
-    }
-    SaveFile(ScriptPath, savestr);
-   }
-  });
+	private void FixBlanks() {
+		int c = data.getSize() - 1;
+		if (c < 0 || data.getElementAt(c).length() > 0) {
+			data.addElement("");
+		} else {
+			c--;
+			while (c >= 0 && data.getElementAt(c).length() < 1) {
+				data.removeElementAt(c);
+				c--;
+			}
+		}
+	}
 
-  frame.addComponentListener(new ComponentAdapter() {
-   public void componentResized(ComponentEvent e) {
-    width = frame.getWidth();
-    height = frame.getHeight();
-   }
+	private void MoveIndex(int start, int end) {
+		String tmp = data.getElementAt(start);
+		data.removeElementAt(start);
+		data.add(end, tmp);
+		FixBlanks();
+		hasEditedScript = true;
+	}
 
-   public void componentMoved(ComponentEvent e) {
-    left = frame.getX();
-    top = frame.getY();
-   }
-  });
+	ScriptAssistant(String title) {
+		super(title);
+		frame = this;
+		File dir = new File(Paths.get(UserDir, AppDir).toString());
+		if (!dir.exists())
+			dir.mkdir();
 
-  frame.setVisible(true);
- }
+		String settingsstr = ReadFile(SettingsPath);
+		String[] settings = settingsstr.split(RecordDelimiter);
+
+		try {
+			left = Integer.parseInt(settings[0]);
+			top = Integer.parseInt(settings[1]);
+			width = Integer.parseInt(settings[2]);
+			height = Integer.parseInt(settings[3]);
+			userName = settings[4];
+		} catch (Exception e) {
+			// passively fail; use defaults for anything not loaded
+		}
+
+		clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+		frame.setFont(font);
+		data = new DefaultListModel<String>();
+
+		datalist = new JList<String>(data);
+		datalist.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+		JScrollPane datascroll = new JScrollPane(datalist);
+		frame.add(datascroll);
+		frame.setLocationRelativeTo(null);
+		frame.setBounds(left, top, width, height);
+		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		datalist.setCellRenderer(new ScriptAssistantListCellRenderer());
+
+		String scriptEntriesData = ReadFile(ScriptPath);
+
+		if (userName == null || userName.equals("")) {
+			userName = JOptionPane.showInputDialog("Enter your name as it would appear in ticket notes:");
+			if (userName != null && !userName.equals("")) {
+				hasEditedSettings = true;
+			}
+		}
+
+		if (userName == null)
+			userName = "";
+
+		String[] scriptEntries = scriptEntriesData.split(RecordDelimiter);
+
+		for (int c = 0; c < scriptEntries.length; c++)
+			data.addElement(scriptEntries[c]);
+		FixBlanks();
+
+		ScriptAssistantMouseListener ml = new ScriptAssistantMouseListener();
+		datalist.addMouseListener(ml);
+		datalist.addMouseMotionListener(ml);
+		datalist.addKeyListener(new ScriptAssistantKeyListener());
+		frame.addWindowListener(new ScriptAssistantWindowListener());
+		frame.addComponentListener(new ScriptAssistantComponentListener());
+
+		frame.setVisible(true);
+	}
+
+	public static void main(String[] args) {
+		new ScriptAssistant("ITSS Script Assistant");
+	}
 }

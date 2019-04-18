@@ -1,6 +1,6 @@
 @echo off
-del *.class
-del *.jar
-javac ScriptAssistant.java
-jar cfe ScriptAssistant.jar ScriptAssistant *.class
+del *.class > nul 2> nul
+del *.jar > nul 2> nul
+javac ScriptAssistant.java -Xlint:unchecked
+jar cfe ScriptAssistant.jar ScriptAssistant *.class *.dat
 pause
