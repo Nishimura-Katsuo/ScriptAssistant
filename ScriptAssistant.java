@@ -5,6 +5,7 @@ import java.awt.datatransfer.*;
 import java.io.*;
 import java.nio.file.*;
 import java.net.*;
+import java.lang.*;
 
 public class ScriptAssistant extends JFrame {
 	JFrame frame;
@@ -228,7 +229,15 @@ public class ScriptAssistant extends JFrame {
 			// fail, let's try something else
 		}
 		try {
-			return new String(Files.readAllBytes(Paths.get(path)));
+			InputStream is = getClass().getResourceAsStream(path);
+			StringBuilder str = new StringBuilder();
+			String line = null;
+			BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(is));	
+			while ((line = bufferedReader.readLine()) != null) {
+				str.append(line);
+				str.append("\n");
+			}		
+			return str.toString();
 		} catch (Exception e) {
 			return "";
 		}
